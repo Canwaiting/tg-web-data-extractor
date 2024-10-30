@@ -23,3 +23,9 @@ Finally, the data will be saved in data.csv
 ## References:
 
 [shamhi](https://github.com/shamhi)'s projects
+
+## TODO:
+
+-[ ] Exception handling ensures that even if data is not successfully obtained, the program can still run normally
+-[ ] Switch to selected mode
+-[ ] Support multiple retries

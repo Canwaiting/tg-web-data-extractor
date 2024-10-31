@@ -26,6 +26,8 @@ Finally, the data will be saved in data.csv
 
 ## TODO:
 
--[ ] Exception handling ensures that even if data is not successfully obtained, the program can still run normally
+-[x] Exception handling ensures that even if data is not successfully obtained, the program can still run normally
+
 -[ ] Switch to selected mode
--[ ] Support multiple retries
+
+-[x] Support multiple retries

@@ -1,3 +1,4 @@
+from tenacity import retry, wait_fixed, stop_after_attempt, retry_if_result
 import csv
 from config import settings
 import random
@@ -48,76 +49,90 @@ async def get_tg_clients() -> list[Client]:
 
 async def get_tg_web_data(tg_client: Client, proxy: str | None) -> str:
     session_name = tg_client.name
-
+    tg_web_data = ""
     if RANDOM_SLEEP_BEFORE_START:
         try:
-            random_sleep_time = random.randint(1,5) * int(session_name)
-            logger.info(f"<magenta>{session_name}</magenta> | random sleep <yellow>{random_sleep_time}</yellow>s before start")
+            random_sleep_time = random.randint(1, 5) * int(session_name)
+            logger.info(
+                f"<magenta>{session_name}</magenta> | random sleep <yellow>{random_sleep_time}</yellow>s before start")
             await asyncio.sleep(random_sleep_time)
         except:
             pass
 
-    if proxy != None:
-        tg_client.proxy = proxy.strip()
-
-    if not tg_client.is_connected:
-        await tg_client.connect()
-        logger.info(f"<magenta>{session_name}</magenta> | <green>successful login</green>")
-
-
-    dialogs = tg_client.get_dialogs()
-    async for dialog in dialogs:
-        if (
-            dialog.chat
-            and dialog.chat.username
-            and dialog.chat.username == PEER
-        ):
-            break
-
-    while True:
+    for i in range(0,3):
         try:
-            peer = await tg_client.resolve_peer(PEER)
-            break
-        except FloodWait as fl:
-            fls = fl.value
+            if proxy != None:
+                tg_client.proxy = proxy.strip()
 
-            logger.warning(f'<magenta>{session_name}</magenta> | FloodWait {fl}')
-            fls *= 2
-            logger.info(f'<magenta>{session_name}</magenta> | Sleep {fls}s')
+            if not tg_client.is_connected:
+                await tg_client.connect()
+                logger.info(f"<magenta>{session_name}</magenta> | "
+                            f"<green>successful login</green>")
 
-            await asyncio.sleep(fls)
+            dialogs = tg_client.get_dialogs()
+            async for dialog in dialogs:
+                if (
+                    dialog.chat
+                    and dialog.chat.username
+                    and dialog.chat.username == PEER
+                ):
+                    break
 
-    web_view = await tg_client.invoke(
-        RequestWebView(
-            peer=peer,
-            bot=peer,
-            platform='android',
-            from_bot_menu=False,
-            url=GAME_URL,
-        )
-    )
+            while True:
+                try:
+                    peer = await tg_client.resolve_peer(PEER)
+                    break
+                except FloodWait as fl:
+                    fls = fl.value
 
-    auth_url = web_view.url
-    tg_web_data = unquote(
-        string=unquote(
-            string=auth_url.split('tgWebAppData=', maxsplit=1)[1].split(
-                '&tgWebAppVersion', maxsplit=1
-            )[0]
-        )
-    )
+                    logger.warning(f'<magenta>{session_name}</magenta> | '
+                                   f'FloodWait {fl}')
+                    fls *= 2
+                    logger.info(f'<magenta>{session_name}</magenta> | '
+                                f'Sleep {fls}s')
 
-    if tg_client.is_connected:
-        await tg_client.disconnect()
+                    await asyncio.sleep(fls)
 
-    if tg_web_data == None or tg_web_data == '':
-        logger.info(f"<magenta>{session_name}</magenta> | <red>failed to get tg_web_data</red>")
-        tg_web_data = ""
-    else:
-        logger.info(f"<magenta>{session_name}</magenta> | "
-                    f"<green>successful get tg_web_data</green> | "
-                    f"<yellow>{tg_web_data}</yellow>")
+            web_view = await tg_client.invoke(
+                RequestWebView(
+                    peer=peer,
+                    bot=peer,
+                    platform='android',
+                    from_bot_menu=False,
+                    url=GAME_URL,
+                )
+            )
 
-    return (session_name, tg_web_data)
+            auth_url = web_view.url
+            tg_web_data = unquote(
+                string=unquote(
+                    string=auth_url.split('tgWebAppData=', maxsplit=1)[1].split(
+                        '&tgWebAppVersion', maxsplit=1
+                    )[0]
+                )
+            )
+
+            if tg_client.is_connected:
+                await tg_client.disconnect()
+
+            if tg_web_data != None and tg_web_data != '':
+                logger.info(f"<magenta>{session_name}</magenta> | "
+                            f"<green>successful get tg_web_data</green> | "
+                            f"<yellow>{tg_web_data}</yellow>")
+                return (session_name, tg_web_data)
+            else:
+                logger.info(f"<magenta>{session_name}</magenta> | "
+                            f"<red>failed to get tg_web_data</red>")
+        except Exception as e:
+            logger.info(f"<magenta>{session_name}</magenta> | "
+                        f"<red>{e}</red> | "
+                        f"<yellow>retry after 3s</yellow>")
+            await asyncio.sleep(3)
+
+    logger.info(f"<magenta>{session_name}</magenta> | "
+                f"<red>failed to get tg_web_data retrying twice</red>")
+    return (session_name, "error")
+
 
 async def run_tasks(tg_clients: list[Client]):
     with open('proxies.txt', 'r') as file:
@@ -130,13 +145,19 @@ async def run_tasks(tg_clients: list[Client]):
              for tg_client, proxy in zip(tg_clients, proxies)]
 
     results = await asyncio.gather(*tasks)
+
     with open('data.csv', 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
         writer.writerow(['session name', 'tg web data'])
         for result in results:
-            writer.writerow(result)
+            try:
+                writer.writerow(result)
+            except Exception as e:
+                logger.info(f"<red>write error<red> | "
+                            f"<magenta>{result[0]}</magenta> | "
+                            f"<yellow>{result[1]}</yellow>")
 
-    logger.info("<green>successful save in data.csv</green>")
+    logger.info("<green>successful</green> save in <yellow>data.csv</yellow>")
 
 async def main():
     tg_clients = await get_tg_clients()
